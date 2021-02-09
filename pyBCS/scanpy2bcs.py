@@ -64,7 +64,7 @@ def normalize_data(M):
     M = M.tocsr()
     for i in range(M.shape[0]):
         l, r = M.indptr[i:i+2]
-        M.data[l:r] = np.log(M.data[l:r] / np.sum(M.data[l:r]) * 10000 + 1)
+        M.data[l:r] = np.log2(M.data[l:r] / np.sum(M.data[l:r]) * 10000 + 1)
     return M.tocsc()
 
 def get_normalized_data(scanpy_obj, raw_data, normalize_raw=True):
