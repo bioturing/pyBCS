@@ -60,18 +60,31 @@ def get_raw_data(scanpy_obj, raw_key):
         res = get_raw_from_layers(scanpy_obj, raw_key)
     return res
 
-def get_normalized_data(scanpy_obj, raw_data):
+def normalize_data(M):
+    M = M.tocsr()
+    for i in range(M.shape[0]):
+        l, r = M.indptr[i:i+2]
+        M.data[l:r] = np.log(M.data[l:r] / np.sum(M.data[l:r]) * 10000 + 1)
+    return M.tocsc()
+
+def get_normalized_data(scanpy_obj, raw_data, normalize_raw=True):
     M = scanpy_obj.X[:][:].tocsc()
     if M.shape == raw_data.shape:
         return M
     else:
-        return raw_data.tocsc()
+        print("--->Shape of \"X\" (%d, %d) does not equal shape of raw data (%d, %d), using raw data as normalized data"
+                % (M.shape + raw_data.shape))
+        if normalize_raw:
+            print("--->--->Normalizing raw data to obtain log-normalized data")
+            return normalize_data(raw_data)
+        else:
+            return raw_data.tocsc()
 
 def encode_strings(strings, encode_format="utf8"):
     return [x.encode(encode_format) for x in strings]
 
-def write_matrix(scanpy_obj, dest_hdf5, raw_key):
-    raw_M, barcodes, features = get_raw_data(scanpy_obj, raw_key)
+def write_matrix(scanpy_obj, dest_hdf5, raw_key="auto", normalize_raw=True):
+    raw_M, barcodes, features = get_raw_data(scanpy_obj, raw_key=raw_key)
     print("--->Writing group \"bioturing\"")
     bioturing_group = dest_hdf5.create_group("bioturing")
     bioturing_group.create_dataset("barcodes",
@@ -97,7 +110,7 @@ def write_matrix(scanpy_obj, dest_hdf5, raw_key):
     countsT_group.create_dataset("shape", data=[len(barcodes), len(features)])
 
     print("--->Writing group \"normalizedT\"")
-    norm_M = get_normalized_data(scanpy_obj, raw_M_T)
+    norm_M = get_normalized_data(scanpy_obj, raw_M, normalize_raw=normalize_raw)
     normalizedT_group = dest_hdf5.create_group("normalizedT")
     normalizedT_group.create_dataset("barcodes",
                                     data=encode_strings(features))
@@ -196,11 +209,13 @@ def write_metadata(scanpy_obj, dest, zobj):
         with zobj.open(dest + ("/main/metadata/%s.json" % uid), "w") as z:
             z.write(json.dumps(obj).encode("utf8"))
 
-def write_main_folder(scanpy_obj, dest, zobj, raw_data):
+def write_main_folder(scanpy_obj, dest, zobj, raw_data="auto", normalize_raw=True):
     print("Writing main/matrix.hdf5", flush=True)
     tmp_matrix = "." + str(uuid.uuid4())
     with h5py.File(tmp_matrix, "w") as dest_hdf5:
-        barcodes, features = write_matrix(scanpy_obj, dest_hdf5, raw_data)
+        barcodes, features = write_matrix(scanpy_obj, dest_hdf5,
+                                            raw_key=raw_data,
+                                            normalize_raw=normalize_raw)
     print("--->Writing to zip", flush=True)
     zobj.write(tmp_matrix, dest + "/main/matrix.hdf5")
     os.remove(tmp_matrix)
@@ -289,13 +304,13 @@ def write_runinfo(scanpy_obj, dest, study_id, zobj):
     with zobj.open(dest + "/run_info.json", "w") as z:
         z.write(json.dumps(run_info).encode("utf8"))
 
-def format_data(source, output_name, raw_data="auto"):
+def format_data(source, output_name, raw_data="auto", normalize_raw=True):
     scanpy_obj = scanpy.read_h5ad(source, "r")
     zobj = zipfile.ZipFile(output_name, "w")
     study_id = generate_uuid(remove_hyphen=False)
     dest = study_id
     with h5py.File(source, "r") as s:
-        write_main_folder(scanpy_obj, dest, zobj, raw_data)
+        write_main_folder(scanpy_obj, dest, zobj, raw_data=raw_data, normalize_raw=normalize_raw)
         write_metadata(scanpy_obj, dest, zobj)
         write_dimred(scanpy_obj, dest, zobj)
         write_runinfo(scanpy_obj, dest, study_id, zobj)
