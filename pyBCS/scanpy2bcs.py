@@ -415,6 +415,11 @@ class DataObject(ABC):
             raw_M_T = raw_M.tocsc()
             countsT_group = dest_hdf5.create_group("countsT")
             countsT_group.create_dataset("data", data=raw_M_T.data)
+            if np.array_equal(raw_M_T.indptr, norm_M.indptr) == False \
+                or np.array_equal(raw_M_T.indices, norm_M.indices) == False:
+                print("Raw data and normalized data do not share the same indptr and indices")
+                countsT_group.create_dataset("indices", data=raw_M_T.indices);
+                countsT_group.create_dataset("indptr", data=raw_M_T.indptr);
         else:
             print("Raw data is not available, ignoring \"countsT\"")
 
@@ -438,11 +443,13 @@ class DataObject(ABC):
             sum_raw = np.array([0.0] * n_cells)
 
         for i in range(n_cells):
-            l, r = raw_M.indptr[i:i+2]
-            sum_lognorm[i] = np.sum(norm_M.data[l:r])
             if has_raw:
+                l, r = raw_M.indptr[i:i+2]
                 sum_raw[i] = np.sum(raw_M.data[l:r])
                 sum_log[i] = np.sum(np.log2(raw_M.data[l:r] + 1))
+
+            l, r = norm_M.indptr[i:i+2]
+            sum_lognorm[i] = np.sum(norm_M.data[l:r])
 
         colsum_group = dest_hdf5.create_group("colsum")
         colsum_group.create_dataset("lognorm", data=sum_lognorm)
@@ -659,7 +666,6 @@ class ScanpyData(DataObject):
         try:
             return scipy.sparse.csr_matrix(self.object.raw.X[:][:])
         except:
-            print(self.object.layers[self.raw_key])
             return scipy.sparse.csr_matrix(self.object.layers[self.raw_key])
 
     def get_normalized_matrix(self):

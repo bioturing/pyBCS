@@ -23,11 +23,22 @@ def light_transpose(bcs_path, partial):
     stamp = time.time()
     with h5py.File(bcs_path, "r") as f:
         if "countsT" in f:
-            count_slot = "countsT"
+            data_slot = "countsT/data"
+            if "indices" in f["countsT"]:
+                print("Raw data indices are different from normalized data indices")
+                indices_slot = "countsT/indices"
+                indptr_slot = "countsT/indptr"
+            else:
+                print("Raw data and normalized data have the same indices")
+                indices_slot = "normalizedT/indices"
+                indptr_slot = "normalizedT/indptr"
         else:
-            count_slot = "normalizedT"
+            data_slot = "normalizedT/data"
+            indices_slot = "normalizedT/indices"
+            indptr_slot = "normalizedT/indptr"
+
     with h5py.File(bcs_path, "r") as f:
-        nnz = len(f["normalizedT"]["indices"])
+        nnz = len(f[indices_slot])
         with h5py.File(tmp_path, "w") as g:
             n, m = f["normalizedT"]["shape"][:]
             k = get_partial(m, partial)
@@ -35,12 +46,12 @@ def light_transpose(bcs_path, partial):
             while i < m:
                 pre = time.time()
                 p = np.min([k, m - i])
-                indptr = f["normalizedT"]["indptr"][:]
+                indptr = f[indptr_slot][:]
                 l, r = indptr[i], indptr[i + p]
                 indptr[0:i] = 0
                 indptr[i:] -= indptr[i]
                 indptr[i + p:] = indptr[i + p]
-                mat = scipy.sparse.csc_matrix((f[count_slot]["data"][l:r], f["normalizedT"]["indices"][l:r], indptr),
+                mat = scipy.sparse.csc_matrix((f[data_slot][l:r], f[indices_slot][l:r], indptr),
                                                 shape=[n, m])
                 mat = mat.transpose().tocsc()
                 group = g.create_group(str(i))
@@ -100,8 +111,10 @@ def create_countsT(bcs_path):
         if "countsT" not in f:
             print("Raw data is not available, ignoring \"countsT\"")
             return
-        replace_dataset(f, name="countsT/indptr", data=f["normalizedT/indptr"])
-        replace_dataset(f, name="countsT/indices", data=f["normalizedT/indices"])
+        if "indptr" not in f["countsT"]:
+            replace_dataset(f, name="countsT/indptr", data=f["normalizedT/indptr"])
+        if "indices" not in f["countsT"]:
+            replace_dataset(f, name="countsT/indices", data=f["normalizedT/indices"])
         replace_dataset(f, name="countsT/shape", data=f["normalizedT/shape"])
         replace_dataset(f, name="countsT/features", data=f["normalizedT/features"])
         replace_dataset(f, name="countsT/barcodes", data=f["normalizedT/barcodes"])
